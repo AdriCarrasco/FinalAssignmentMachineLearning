@@ -1,0 +1,113 @@
+---
+title: "Final Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(data.table)
+library(C50)
+library(caret)
+library(ggplot2)
+library(tictoc)
+```
+
+
+## Introduction
+
+```{r}
+setwd("~/Documents/Machine Learning course/Final Project")
+training <- read.csv("pml-training.csv")
+training <- data.table(training)
+testing <- read.csv("pml-testing.csv")
+```
+
+
+```{r}
+#names(training)
+summary(training)
+```
+
+
+## Exploratory Analisis
+
+We examine some of the variables we will use later
+
+```{r}
+ggplot(training, aes(x = num_window, y = roll_belt, col = classe))+geom_point()
+ggplot(training, aes(x= magnet_belt_z , y = magnet_arm_z, col = classe))+geom_point()+facet_grid(classe~.)
+```
+
+Split in train/test for the training data. We will try to use the maximum number of partitions for this analysis.
+
+```{r}
+idx <- createDataPartition(training$classe, p = 0.75, list = FALSE)
+train_cv <- training[idx,]
+test_cv <- training[-idx,]
+
+```
+
+
+#Data Model
+
+We will use three types of models : 
+* C5.0 with num_window and roll belt
+* xgBoost with gyros_belt_x  + gyros_belt_z + accel_belt_x  + accel_belt_z + magnet_belt_x + magnet_belt_y + magnet_belt_z +  magnet_arm_x + magnet_arm_y + magnet_arm_z
+* xgBoost with oll_dumbbell + pitch_dumbbell + roll_arm + total_accel_arm
+```{r}
+trCont <- trainControl( method = "cv", number = 3, classProbs = TRUE)
+
+load("model_one.RData")
+load("model_two.RData")
+load("model_three.RData")
+
+# tic("C5.0")
+# mod.fit.one <- train(classe ~  num_window + roll_belt, data = train_cv, method = "C5.0", trControl = trCont)
+# toc()
+# 
+# tic("XgbTree")
+# mod.fit.two <- train(classe ~ gyros_belt_x  + gyros_belt_z + accel_belt_x  + accel_belt_z + magnet_belt_x + magnet_belt_y + magnet_belt_z +  magnet_arm_x + magnet_arm_y + magnet_arm_z, data = train_cv , method = "C5.0", trControl = trCont)
+# toc()
+# 
+# tic("rf")
+# mod.fit.three <- train(classe ~ roll_dumbbell + pitch_dumbbell + roll_arm + total_accel_arm, data = train_cv , method = "C5.0", trControl = trCont)
+# toc()
+
+train_cv$pred1 <- predict(mod.fit.one, train_cv)
+train_cv$pred2 <- predict(mod.fit.two, train_cv)
+train_cv$pred3 <- predict(mod.fit.three, train_cv)
+confusionMatrix(train_cv$pred1, train_cv$classe)
+confusionMatrix(train_cv$pred2, train_cv$classe)
+confusionMatrix(train_cv$pred3, train_cv$classe)
+
+```
+
+We combine the three models into one using a random forest:
+
+```{r}
+
+model.combined <- train(classe ~ pred1 + pred2 + pred3,data = train_cv, method = "rf", trControl = trCont)
+
+confusionMatrix(predict(model.combined, train_cv), train_cv$classe)
+```
+
+We see the final results in the testing set.
+
+```{r}
+testing$pred1 <- predict(mod.fit.one, testing)
+testing$pred2 <- predict(mod.fit.two, testing)
+testing$pred3 <- predict(mod.fit.three, testing)
+
+testing$final_prediction <- predict(model.combined, testing)
+```
+
+Results:
+
+```{r}
+print(testing[,c("final_prediction")])
+```
+
+
